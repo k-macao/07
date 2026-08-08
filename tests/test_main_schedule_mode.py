@@ -193,6 +193,72 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(effective_region, "jp,kr")
         self.assertFalse(should_skip_all)
 
+    def test_compute_trading_day_filter_falls_back_to_latest_trading_day(self) -> None:
+        """非交易日（周末/节假日）回退最近交易日：不跳过，按最近交易日继续分析。"""
+        args = self._make_args()
+        config = self._make_config(
+            trading_day_check_enabled=True,
+            market_review_enabled=True,
+            market_review_region="cn",
+            use_latest_trading_day=True,
+            database_path=str(Path(self.temp_dir.name) / "stock_analysis.db"),
+        )
+
+        stock_codes = ["cn-stock", "us-stock"]
+
+        with patch(
+            "src.core.trading_calendar.get_market_for_stock",
+            side_effect=lambda code: {"cn-stock": "cn", "us-stock": "us"}.get(code),
+        ), patch(
+            "src.core.trading_calendar.get_open_markets_today",
+            return_value=set(),
+        ), patch(
+            "src.core.trading_calendar.get_recent_trading_dates",
+            return_value={"cn": date(2026, 8, 7), "us": date(2026, 8, 7)},
+        ):
+            filtered_codes, effective_region, should_skip_all = main._compute_trading_day_filter(
+                config,
+                args,
+                stock_codes,
+            )
+
+        self.assertEqual(filtered_codes, ["cn-stock", "us-stock"])
+        self.assertEqual(effective_region, "cn")
+        self.assertFalse(should_skip_all)
+
+    def test_compute_trading_day_filter_skips_without_fallback(self) -> None:
+        """未启用回退时，非交易日行为保持原样：全部跳过。"""
+        args = self._make_args()
+        config = self._make_config(
+            trading_day_check_enabled=True,
+            market_review_enabled=True,
+            market_review_region="cn",
+            use_latest_trading_day=False,
+            database_path=str(Path(self.temp_dir.name) / "stock_analysis.db"),
+        )
+
+        stock_codes = ["cn-stock", "us-stock"]
+
+        with patch(
+            "src.core.trading_calendar.get_market_for_stock",
+            side_effect=lambda code: {"cn-stock": "cn", "us-stock": "us"}.get(code),
+        ), patch(
+            "src.core.trading_calendar.get_open_markets_today",
+            return_value=set(),
+        ), patch(
+            "src.core.trading_calendar.get_recent_trading_dates",
+            return_value={"cn": date(2026, 8, 7), "us": date(2026, 8, 7)},
+        ):
+            filtered_codes, effective_region, should_skip_all = main._compute_trading_day_filter(
+                config,
+                args,
+                stock_codes,
+            )
+
+        self.assertEqual(filtered_codes, [])
+        self.assertEqual(effective_region, "")
+        self.assertTrue(should_skip_all)
+
     def test_public_webui_bind_warns_when_auth_is_disabled(self) -> None:
         with patch("src.auth.is_auth_enabled", return_value=False), \
              patch("main.logger.warning") as warning_log:
