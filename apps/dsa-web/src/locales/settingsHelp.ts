@@ -704,6 +704,14 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['影响定时任务、CLI 和 GitHub Actions 手动运行是否在休市日执行；Web/API 大盘复盘按钮会直接提交任务。'],
     notes: ['关闭后休市日可能生成缺少实时行情的报告。'],
   },
+  'settings.system.USE_LATEST_TRADING_DAY': {
+    title: '非交易日回退最近交易日',
+    summary: '周末/节假日不跳过分析，自动按最近一个交易日的数据继续分析。',
+    usage: '默认 true；设为 false 恢复“非交易日跳过”的原行为。',
+    valueNotes: ['按各市场时区查找最近交易日（回退窗口 10 天），数据源自然返回最近收盘数据。'],
+    impact: ['影响定时任务、CLI 和 GitHub Actions 手动运行在休市日的执行结果；不会改变交易日当天的行为。'],
+    notes: ['与 TRADING_DAY_CHECK_ENABLED 独立：交易日检查关闭时此开关不生效。'],
+  },
   'settings.system.HTTP_PROXY': {
     title: '网络代理',
     summary: '为外部 API、模型服务或搜索请求配置代理地址。',
@@ -1890,6 +1898,14 @@ const settingsHelpEnUS: SettingsHelpMap = {
     valueNotes: ['Uses market calendars for A-share, HK, US, and other supported markets.'],
     impact: ['Affects scheduled jobs, CLI runs, and GitHub Actions manual runs on holidays; the Web/API market-review button submits directly.'],
     notes: ['Disabling it can produce reports with missing realtime quotes on closed markets.'],
+  },
+  'settings.system.USE_LATEST_TRADING_DAY': {
+    title: 'Use Latest Trading Day',
+    summary: 'On weekends/holidays, fall back to the most recent trading day and run the analysis against its data instead of skipping.',
+    usage: 'Default true. Set false to restore the previous skip-on-non-trading-day behavior.',
+    valueNotes: ['Resolves the most recent trading day per market timezone (lookback window 10 days); data providers naturally return the latest close.'],
+    impact: ['Affects scheduled jobs, CLI runs, and GitHub Actions manual runs on closed-market days; trading-day behavior is unchanged.'],
+    notes: ['Independent of TRADING_DAY_CHECK_ENABLED: this switch is inert when the trading-day check is disabled.'],
   },
   'settings.system.HTTP_PROXY': {
     title: 'Network Proxy',
