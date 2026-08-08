@@ -20,6 +20,16 @@ on:
         description: '报告字数目标（长报告支持分段推送）'
         required: false
         default: '100000'
+      force_run:
+        description: '强制运行（跳过交易日检查，周末/节假日手动触发时建议开启）'
+        required: false
+        default: true
+        type: boolean
+      use_latest_trading_day:
+        description: '非交易日回退最近交易日：周末/节假日按最近交易日数据继续分析（默认开启）'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   deepseek-analysis:
@@ -36,15 +46,22 @@ jobs:
           STOCK_LIST: ${{ github.event.inputs.stock_list }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          USE_LATEST_TRADING_DAY: ${{ github.event.inputs.use_latest_trading_day }}
         run: |
           mkdir -p reports
-          python main.py --mode ${{ github.event.inputs.analysis_mode }} --output-dir reports/
+          FORCE_RUN_ARG=""
+          if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+            FORCE_RUN_ARG="--force-run"
+            echo "⚡ 已启用强制运行模式（跳过交易日检查）"
+          fi
+          python main.py --mode ${{ github.event.inputs.analysis_mode }} --output-dir reports/ $FORCE_RUN_ARG
       - name: 生成并推送报告（支持长内容分段推送到 PushPlus 微信）
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          python scripts/pushplus_push_report.py --dir reports/ --max-chars 100000 --channel pushplus
+          python scripts/pushplus_push_report.py --dir reports/ --max-chars ${{ github.event.inputs.report_length }} --channel pushplus
       - uses: actions/upload-artifact@v6
+        if: always()
         with:
           name: deepseek-reports
           path: reports/
