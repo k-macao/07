@@ -23,7 +23,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 # 允许以 `python scripts/pushplus_push_report.py` 直接运行
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -128,7 +128,7 @@ def _split_by_char_budget(content: str, max_chars: int) -> List[str]:
 
 
 def _push_file(
-    sender: "PushplusSender",
+    sender: Any,
     path: Path,
     max_chars: int,
 ) -> Tuple[bool, int]:
