@@ -2466,6 +2466,27 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
         self.assertAlmostEqual(mock_post.call_count, 4, delta=1)
         self.assertEqual(mock_sleep.call_count, mock_post.call_count - 1)
 
+    @mock.patch("src.notification.get_config")
+    def test_save_report_to_file_respects_output_dir(self, mock_get_config):
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cfg = _make_config()
+            cfg.output_dir = temp_dir
+            mock_get_config.return_value = cfg
+
+            service = NotificationService()
+            filepath = service.save_report_to_file("test content", filename="my_test_report.md")
+
+            self.assertEqual(Path(filepath).parent, Path(temp_dir))
+            self.assertTrue(Path(filepath).exists())
+            self.assertEqual(Path(filepath).read_text(encoding="utf-8"), "test content")
+        finally:
+            shutil.rmtree(temp_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

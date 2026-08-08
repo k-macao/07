@@ -439,6 +439,22 @@ def parse_arguments() -> argparse.Namespace:
         help='强制回测（即使已有回测结果也重新计算）'
     )
 
+    # === Workflow / DeepSeek analysis compatible arguments ===
+    parser.add_argument(
+        '--mode',
+        type=str,
+        choices=('full', 'market-only', 'stocks-only'),
+        default=None,
+        help='分析模式：full (完整分析), market-only (仅大盘复盘), stocks-only (仅个股分析)'
+    )
+
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        default=None,
+        help='报告保存输出目录'
+    )
+
     return parser.parse_args()
 
 
@@ -1320,6 +1336,17 @@ def main() -> int:
     # 解析命令行参数
     args = parse_arguments()
 
+    # 处理 analysis mode 参数映射
+    if getattr(args, 'mode', None) == 'market-only':
+        args.market_review = True
+        args.no_market_review = False
+    elif getattr(args, 'mode', None) == 'stocks-only':
+        args.no_market_review = True
+        args.market_review = False
+    elif getattr(args, 'mode', None) == 'full':
+        args.no_market_review = False
+        args.market_review = False
+
     # 在配置加载前先初始化 bootstrap 日志，确保早期失败也能落盘
     try:
         _setup_bootstrap_logging(debug=args.debug)
@@ -1334,6 +1361,8 @@ def main() -> int:
     # 加载配置（在 bootstrap logging 之后执行，确保异常有日志）
     try:
         config = get_config()
+        if getattr(args, 'output_dir', None):
+            config.output_dir = args.output_dir
     except Exception as exc:
         logger.exception("加载配置失败: %s", exc)
         return 1
