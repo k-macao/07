@@ -13,8 +13,12 @@ PushPlus 报告推送脚本
     PUSHPLUS_TOPIC  PushPlus 群组编码（可选，一对多推送）
 
 退出码：
-    0  全部报告推送成功（或目录为空）
-    1  参数错误 / 未配置 token / 存在推送失败
+    0  全部报告推送成功
+    1  参数错误 / 未配置 token / 目录下无报告可推送 / 存在推送失败
+
+注意：目录下没有任何匹配的报告文件时返回 1 而不是 0。
+这可以避免工作流“全绿但实际未推送”的静默失败——例如分析被非交易日
+检查跳过（未传 --force-run）或分析失败未产出报告时，推送步骤会明确报错。
 """
 from __future__ import annotations
 
@@ -173,11 +177,6 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    # 延迟导入：让 --help 在依赖未安装时也可用，且配置加载失败能给出清晰日志
-    from src.config import get_config
-    from src.formatters import strip_hidden_markdown_metadata
-    from src.notification_sender.pushplus_sender import PushplusSender
-
     report_dir = Path(args.dir).expanduser().resolve()
     try:
         files = _collect_report_files(report_dir, args.pattern)
@@ -186,8 +185,18 @@ def main() -> int:
         return 1
 
     if not files:
-        logger.warning("目录 %s 下没有匹配 %s 的报告文件，无需推送", report_dir, args.pattern)
-        return 0
+        logger.error(
+            "目录 %s 下没有匹配 %s 的报告文件：分析可能被非交易日检查跳过"
+            "（可加 --force-run）或未成功产出报告，请检查上游分析步骤日志",
+            report_dir,
+            args.pattern,
+        )
+        return 1
+
+    # 延迟导入：确认有待推送文件后再加载应用配置，空目录时快速失败
+    from src.config import get_config
+    from src.formatters import strip_hidden_markdown_metadata
+    from src.notification_sender.pushplus_sender import PushplusSender
 
     logger.info("待推送报告 %d 个: %s", len(files), ", ".join(p.name for p in files))
 
