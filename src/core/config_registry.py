@@ -3387,6 +3387,32 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": ["force_run_override"],
     },
+    "USE_LATEST_TRADING_DAY": {
+        "title": "Use Latest Trading Day",
+        "description": "On non-trading days (weekend/holiday), fall back to the most recent trading day and run the analysis against its data instead of skipping.",
+        "category": "system",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 13,
+        "help_key": "settings.system.USE_LATEST_TRADING_DAY",
+        "examples": [
+            "USE_LATEST_TRADING_DAY=true",
+            "USE_LATEST_TRADING_DAY=false",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：其他配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#其他配置",
+            },
+        ],
+        "warning_codes": [],
+    },
     "MARKET_REVIEW_ENABLED": {
         "title": "Market Review Enabled",
         "description": "Enable market overview/review in analysis reports.",

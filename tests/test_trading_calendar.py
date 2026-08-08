@@ -878,6 +878,93 @@ class MarketPhaseContextTestCase(unittest.TestCase):
         self.assertIn("calendar_error", ctx.warnings)
 
 
+class GetRecentTradingDatesTestCase(unittest.TestCase):
+    """Regression tests for get_recent_trading_dates (非交易日回退最近交易日)."""
+
+    @staticmethod
+    def _fixed_now_cls(day: date):
+        class _FixedNow:
+            @staticmethod
+            def now(tz):
+                return datetime(day.year, day.month, day.day, 10, 0, tzinfo=tz)
+
+        return _FixedNow
+
+    def test_weekend_returns_previous_session_for_all_markets(self):
+        fake_calendar = _FakeCalendar(
+            sessions=[date(2026, 3, 26), date(2026, 3, 27)],
+            close_hour=15,
+            tz_name="Asia/Shanghai",
+        )
+        with patch.object(trading_calendar, "_XCALS_AVAILABLE", True), patch.object(
+            trading_calendar,
+            "xcals",
+            _calendar_namespace(fake_calendar),
+            create=True,
+        ), patch.object(
+            trading_calendar,
+            "datetime",
+            self._fixed_now_cls(date(2026, 3, 28)),
+        ):
+            result = trading_calendar.get_recent_trading_dates()
+
+        expected = {m: date(2026, 3, 27) for m in trading_calendar.MARKET_TIMEZONE}
+        self.assertEqual(result, expected)
+
+    def test_trading_day_returns_today(self):
+        fake_calendar = _FakeCalendar(
+            sessions=[date(2026, 3, 26), date(2026, 3, 27)],
+            close_hour=15,
+            tz_name="Asia/Shanghai",
+        )
+        with patch.object(trading_calendar, "_XCALS_AVAILABLE", True), patch.object(
+            trading_calendar,
+            "xcals",
+            _calendar_namespace(fake_calendar),
+            create=True,
+        ), patch.object(
+            trading_calendar,
+            "datetime",
+            self._fixed_now_cls(date(2026, 3, 27)),
+        ):
+            result = trading_calendar.get_recent_trading_dates()
+
+        expected = {m: date(2026, 3, 27) for m in trading_calendar.MARKET_TIMEZONE}
+        self.assertEqual(result, expected)
+
+    def test_market_without_recent_session_is_omitted(self):
+        # 最近 5 天内没有任何交易日 -> 该市场不应出现在结果中（回退不到交易日）
+        fake_calendar = _FakeCalendar(
+            sessions=[date(2026, 3, 1)],
+            close_hour=15,
+            tz_name="Asia/Shanghai",
+        )
+        with patch.object(trading_calendar, "_XCALS_AVAILABLE", True), patch.object(
+            trading_calendar,
+            "xcals",
+            _calendar_namespace(fake_calendar),
+            create=True,
+        ), patch.object(
+            trading_calendar,
+            "datetime",
+            self._fixed_now_cls(date(2026, 3, 28)),
+        ):
+            result = trading_calendar.get_recent_trading_dates(max_lookback_days=5)
+
+        self.assertEqual(result, {})
+
+    def test_fail_open_when_calendar_unavailable(self):
+        with patch.object(trading_calendar, "_XCALS_AVAILABLE", False), patch.object(
+            trading_calendar,
+            "datetime",
+            self._fixed_now_cls(date(2026, 3, 28)),
+        ):
+            result = trading_calendar.get_recent_trading_dates()
+
+        expected = {m: date(2026, 3, 28) for m in trading_calendar.MARKET_TIMEZONE}
+        self.assertEqual(result, expected)
+
+
 class ComputeEffectiveRegionTestCase(unittest.TestCase):
     """Regression tests for compute_effective_region subset logic."""
 

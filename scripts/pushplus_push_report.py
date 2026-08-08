@@ -195,7 +195,6 @@ def main() -> int:
 
     # 延迟导入：确认有待推送文件后再加载应用配置，空目录时快速失败
     from src.config import get_config
-    from src.formatters import strip_hidden_markdown_metadata
     from src.notification_sender.pushplus_sender import PushplusSender
 
     logger.info("待推送报告 %d 个: %s", len(files), ", ".join(p.name for p in files))

@@ -285,6 +285,7 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --single-notify    # 启用单股推送模式（每分析完一只立即推送）
   python main.py --schedule         # 启用定时任务模式
   python main.py --market-review    # 仅运行大盘复盘
+  python main.py --use-latest-trading-day  # 非交易日回退最近交易日继续分析
         '''
     )
 
@@ -366,6 +367,12 @@ def parse_arguments() -> argparse.Namespace:
         '--force-run',
         action='store_true',
         help='跳过交易日检查，强制执行全量分析（Issue #373）'
+    )
+
+    parser.add_argument(
+        '--use-latest-trading-day',
+        action='store_true',
+        help='非交易日回退最近交易日：周末/节假日不跳过，按最近交易日行情继续分析'
     )
 
     parser.add_argument(
@@ -458,6 +465,40 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _resolve_effective_open_markets(
+    config: Config,
+    args: argparse.Namespace,
+):
+    """
+    Resolve the set of markets treated as "open" for this run.
+
+    With --use-latest-trading-day / USE_LATEST_TRADING_DAY=true, markets that
+    are closed today (weekend/holiday) fall back to their most recent trading
+    day, so the analysis runs against the last session's data instead of being
+    skipped (非交易日回退最近交易日).
+    """
+    from src.core.trading_calendar import (
+        get_open_markets_today,
+        get_recent_trading_dates,
+    )
+
+    open_markets = get_open_markets_today()
+    if getattr(args, 'use_latest_trading_day', False) or getattr(
+        config, 'use_latest_trading_day', False
+    ):
+        recent = get_recent_trading_dates()
+        fallback = {m for m in recent if m not in open_markets}
+        if fallback:
+            detail = ", ".join(
+                f"{m}→{recent[m].isoformat()}" for m in sorted(fallback)
+            )
+            logger.info(
+                "非交易日回退最近交易日: %s，按最近交易日数据继续分析", detail
+            )
+        open_markets = open_markets | set(recent)
+    return open_markets
+
+
 def _compute_trading_day_filter(
     config: Config,
     args: argparse.Namespace,
@@ -478,11 +519,10 @@ def _compute_trading_day_filter(
 
     from src.core.trading_calendar import (
         get_market_for_stock,
-        get_open_markets_today,
         compute_effective_region,
     )
 
-    open_markets = get_open_markets_today()
+    open_markets = _resolve_effective_open_markets(config, args)
     filtered_codes = []
     for code in stock_codes:
         mkt = get_market_for_stock(code)
@@ -1526,8 +1566,8 @@ def main() -> int:
             # explicit --market-review invocation when the flag is disabled.
             effective_region = None
             if not getattr(args, 'force_run', False) and getattr(config, 'trading_day_check_enabled', True):
-                from src.core.trading_calendar import get_open_markets_today, compute_effective_region as _compute_region
-                open_markets = get_open_markets_today()
+                from src.core.trading_calendar import compute_effective_region as _compute_region
+                open_markets = _resolve_effective_open_markets(config, args)
                 effective_region = _compute_region(
                     getattr(config, 'market_review_region', 'cn') or 'cn', open_markets
                 )

@@ -601,6 +601,63 @@ def get_open_markets_today() -> Set[str]:
     return result
 
 
+def get_recent_trading_dates(max_lookback_days: int = 10) -> Dict[str, date]:
+    """
+    For each supported market, resolve the most recent trading day on or before
+    today (in that market's own timezone), within the lookback window.
+
+    This powers the "非交易日回退最近交易日" behavior: on weekends/holidays the
+    analysis is not skipped — it runs against the last session's data, which
+    data providers naturally return for a non-trading day.
+
+    Returns:
+        Dict mapping market -> most recent session date. A market is omitted
+        when it had no session within the lookback window (e.g. a long holiday).
+        Fail-open: when exchange-calendars is unavailable or a market's
+        calendar errors, that market maps to today's local date (treated as open).
+    """
+    result: Dict[str, date] = {}
+    for mkt, tz_name in MARKET_TIMEZONE.items():
+        try:
+            today = datetime.now(ZoneInfo(tz_name)).date()
+        except Exception as e:
+            logger.warning("get_recent_trading_dates tz fail-open for %s: %s", mkt, e)
+            today = datetime.now().date()
+
+        if not _XCALS_AVAILABLE:
+            result[mkt] = today
+            continue
+
+        ex = MARKET_EXCHANGE.get(mkt)
+        if not ex:
+            result[mkt] = today
+            continue
+
+        try:
+            cal = xcals.get_calendar(ex)
+            if cal.is_session(today):
+                result[mkt] = today
+                continue
+            recent: Optional[date] = None
+            for offset in range(1, max_lookback_days + 1):
+                candidate = today - timedelta(days=offset)
+                if cal.is_session(candidate):
+                    recent = candidate
+                    break
+            if recent is not None:
+                result[mkt] = recent
+            else:
+                logger.info(
+                    "get_recent_trading_dates: %s 在最近 %d 天内无交易日，跳过该市场",
+                    mkt,
+                    max_lookback_days,
+                )
+        except Exception as e:
+            logger.warning("get_recent_trading_dates fail-open for %s: %s", mkt, e)
+            result[mkt] = today
+    return result
+
+
 def compute_effective_region(
     config_region: str, open_markets: Set[str]
 ) -> Optional[str]:
