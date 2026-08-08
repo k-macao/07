@@ -108,6 +108,8 @@ class MainScheduleModeTestCase(unittest.TestCase):
             "force_run": False,
             "single_notify": False,
             "no_context_snapshot": False,
+            "mode": None,
+            "output_dir": None,
         }
         defaults.update(overrides)
         return SimpleNamespace(**defaults)
@@ -2207,6 +2209,46 @@ class MainScheduleModeTestCase(unittest.TestCase):
         # Cleanup: reset state
         main._LazyPipelineDescriptor._resolved = None
         main._env_bootstrapped = False
+
+    def test_cli_mode_and_output_dir_args(self) -> None:
+        """Test that `--mode` and `--output-dir` CLI arguments are mapped correctly."""
+        # Test mode: market-only
+        args_market = self._make_args(mode="market-only", output_dir="custom_reports/")
+        config = self._make_config()
+        with patch("main.parse_arguments", return_value=args_market), \
+             patch("main.get_config", return_value=config), \
+             patch("main.setup_logging"), \
+             patch("main._run_market_review_with_shared_lock") as mock_review, \
+             patch("src.core.market_review_runtime.build_market_review_runtime", return_value=(MagicMock(), MagicMock(), MagicMock())):
+            exit_code = main.main()
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(args_market.market_review)
+            self.assertFalse(args_market.no_market_review)
+            self.assertEqual(config.output_dir, "custom_reports/")
+
+        # Test mode: stocks-only
+        args_stocks = self._make_args(mode="stocks-only")
+        config = self._make_config()
+        with patch("main.parse_arguments", return_value=args_stocks), \
+             patch("main.get_config", return_value=config), \
+             patch("main.setup_logging"), \
+             patch("main._run_analysis_with_runtime_scheduler_lock") as mock_run:
+            exit_code = main.main()
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(args_stocks.market_review)
+            self.assertTrue(args_stocks.no_market_review)
+
+        # Test mode: full
+        args_full = self._make_args(mode="full")
+        config = self._make_config()
+        with patch("main.parse_arguments", return_value=args_full), \
+             patch("main.get_config", return_value=config), \
+             patch("main.setup_logging"), \
+             patch("main._run_analysis_with_runtime_scheduler_lock") as mock_run:
+            exit_code = main.main()
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(args_full.market_review)
+            self.assertFalse(args_full.no_market_review)
 
 
 if __name__ == "__main__":

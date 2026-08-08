@@ -2849,8 +2849,12 @@ class NotificationService(
             date_str = datetime.now().strftime('%Y%m%d')
             filename = f"report_{date_str}.md"
 
-        # 确保 reports 目录存在（使用项目根目录下的 reports）
-        reports_dir = Path(__file__).parent.parent / 'reports'
+        # 确保 reports 目录存在（优先使用配置的 output_dir）
+        output_dir = getattr(self._config, 'output_dir', None)
+        if output_dir:
+            reports_dir = Path(output_dir)
+        else:
+            reports_dir = Path(__file__).parent.parent / 'reports'
         reports_dir.mkdir(parents=True, exist_ok=True)
 
         filepath = reports_dir / filename
