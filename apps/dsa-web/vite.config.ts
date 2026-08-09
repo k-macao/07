@@ -230,6 +230,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',  // 允许公网访问
     port: 5173,       // 默认端口
+    allowedHosts: true, // 允许沙箱预览域名访问（dev/演示用）
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
