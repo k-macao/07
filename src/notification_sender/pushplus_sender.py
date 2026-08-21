@@ -8,7 +8,6 @@ PushPlus 发送提醒服务
 import logging
 import time
 from typing import Optional
-from datetime import datetime
 import requests
 
 from src.config import Config
@@ -36,6 +35,7 @@ class PushplusSender:
         content: str,
         title: Optional[str] = None,
         *,
+        template: str = "markdown",
         timeout_seconds: Optional[float] = None,
     ) -> bool:
         """
@@ -56,8 +56,9 @@ class PushplusSender:
         - 支持多种消息格式
 
         Args:
-            content: 消息内容（Markdown 格式）
+            content: 消息内容（Markdown 或 HTML 格式，取决于 template）
             title: 消息标题（可选）
+            template: PushPlus 消息模板（markdown / html / txt / json）
 
         Returns:
             是否发送成功
@@ -69,13 +70,30 @@ class PushplusSender:
         api_url = "http://www.pushplus.plus/send"
 
         if title is None:
-            date_str = datetime.now().strftime('%Y-%m-%d')
-            title = f"📈 股票分析报告 - {date_str}"
-        sanitized_content = strip_hidden_markdown_metadata(content).strip()
+            title = "章鱼 AI 全景分析"
+        if template == "markdown":
+            sanitized_content = strip_hidden_markdown_metadata(content).strip()
+        else:
+            sanitized_content = content.strip()
 
         try:
             content_bytes = len(sanitized_content.encode('utf-8'))
             if content_bytes > self._pushplus_max_bytes:
+                if template != "markdown":
+                    # HTML 等结构化内容不能按字节盲切（会截断标签），
+                    # 由调用方负责预先分页；这里仅告警并尝试整条发送。
+                    logger.warning(
+                        "PushPlus %s 消息超长(%s字节)，可能被服务端拒绝，请在调用方预先分页",
+                        template,
+                        content_bytes,
+                    )
+                    return self._send_pushplus_message(
+                        api_url,
+                        sanitized_content,
+                        title,
+                        template=template,
+                        timeout_seconds=timeout_seconds,
+                    )
                 logger.info(
                     "PushPlus 消息内容超长(%s字节/%s字符)，将分批发送",
                     content_bytes,
@@ -92,6 +110,7 @@ class PushplusSender:
                 api_url,
                 sanitized_content,
                 title,
+                template=template,
                 timeout_seconds=timeout_seconds,
             )
         except Exception as e:
@@ -104,13 +123,14 @@ class PushplusSender:
         content: str,
         title: str,
         *,
+        template: str = "markdown",
         timeout_seconds: Optional[float] = None,
     ) -> bool:
         payload = {
             "token": self._pushplus_token,
             "title": title,
             "content": content,
-            "template": "markdown",
+            "template": template,
         }
 
         if self._pushplus_topic:
