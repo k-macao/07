@@ -25,7 +25,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Tuple
 
@@ -131,13 +130,48 @@ def _split_by_char_budget(content: str, max_chars: int) -> List[str]:
     return chunks
 
 
+def _fit_markdown_to_html_budget(
+    markdown_text: str,
+    byte_budget: int,
+) -> List[str]:
+    """把一段 Markdown 递归二分，直到渲染成 HTML 页面后不超过字节预算。
+
+    HTML 页面不能像纯文本那样按字节盲切（会截断标签），因此在渲染前
+    以 Markdown 行边界为单位切分，保证每一页渲染后都在预算内。
+    """
+    from src.pushplus_wechat_page import render_wechat_page
+
+    rendered = render_wechat_page(markdown_text)
+    if len(rendered.encode("utf-8")) <= byte_budget:
+        return [markdown_text]
+
+    lines = markdown_text.splitlines(keepends=True)
+    if len(lines) <= 1:
+        # 单行超长：退化为按字符对半切
+        mid = max(1, len(markdown_text) // 2)
+        return (
+            _fit_markdown_to_html_budget(markdown_text[:mid], byte_budget)
+            + _fit_markdown_to_html_budget(markdown_text[mid:], byte_budget)
+        )
+
+    mid = len(lines) // 2
+    first = "".join(lines[:mid])
+    second = "".join(lines[mid:])
+    return (
+        _fit_markdown_to_html_budget(first, byte_budget)
+        + _fit_markdown_to_html_budget(second, byte_budget)
+    )
+
+
 def _push_file(
     sender: Any,
     path: Path,
     max_chars: int,
+    max_bytes: int,
 ) -> Tuple[bool, int]:
     """推送单个报告文件。返回 (是否全部成功, 发送段数)。"""
     from src.formatters import strip_hidden_markdown_metadata
+    from src.pushplus_wechat_page import PAGE_TITLE, render_wechat_page
 
     try:
         raw = path.read_text(encoding="utf-8")
@@ -150,16 +184,27 @@ def _push_file(
         logger.warning("报告为空，跳过: %s", path)
         return True, 0
 
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    base_title = f"📈 股票分析报告 - {date_str} - {path.stem}"
+    # 标题不带渠道名与时间
+    base_title = PAGE_TITLE
 
-    chunks = _split_by_char_budget(content, max_chars)
-    total = len(chunks)
+    # 先按字符预算粗分，再按渲染后 HTML 的字节预算细分，
+    # 保证每页 HTML 都能整条发出（发送层不会二次盲切 HTML）。
+    byte_budget = max(4000, max_bytes - 1500)
+    md_pages: List[str] = []
+    for chunk in _split_by_char_budget(content, max_chars):
+        md_pages.extend(_fit_markdown_to_html_budget(chunk, byte_budget))
+
+    total = len(md_pages)
     success_count = 0
 
-    for idx, chunk in enumerate(chunks, start=1):
+    for idx, md_page in enumerate(md_pages, start=1):
         title = base_title if total == 1 else f"{base_title} ({idx}/{total})"
-        ok = sender.send_to_pushplus(chunk, title=title)
+        html_page = render_wechat_page(
+            md_page,
+            part_index=idx,
+            part_total=total,
+        )
+        ok = sender.send_to_pushplus(html_page, title=title, template="html")
         if ok:
             success_count += 1
             logger.info("推送成功: %s (%d/%d)", path.name, idx, total)
@@ -208,7 +253,12 @@ def main() -> int:
 
     failed: List[str] = []
     for path in files:
-        ok, sent_chunks = _push_file(sender, path, max_chars=args.max_chars)
+        ok, sent_chunks = _push_file(
+            sender,
+            path,
+            max_chars=args.max_chars,
+            max_bytes=getattr(config, "pushplus_max_bytes", DEFAULT_PUSHPLUS_MAX_BYTES),
+        )
         if not ok:
             failed.append(path.name)
         elif sent_chunks == 0:
