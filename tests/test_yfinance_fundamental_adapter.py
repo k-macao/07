@@ -93,14 +93,19 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
                 pd.Timestamp("2025-12-31"): {"Operating Cash Flow": 3.5e10},
             }
         )
+        # 红利日期相对「今天」动态生成（每季度一次，全部落在 TTM 365 天窗口内），
+        # 避免固定日期随时间流逝滚出窗口导致的时间炸弹断言失败。
+        now = pd.Timestamp.now(tz="America/New_York")
+        dividend_offsets_days = (340, 250, 160, 100)
         dividends = pd.Series(
             [0.26, 0.26, 0.26, 0.27],
             index=pd.DatetimeIndex(
-                ["2025-08-11", "2025-11-10", "2026-02-09", "2026-05-11"],
+                [now - pd.Timedelta(days=d) for d in dividend_offsets_days],
                 tz="America/New_York",
             ),
             name="Dividends",
         )
+        latest_ex_dividend = (now - pd.Timedelta(days=dividend_offsets_days[-1])).date().isoformat()
         ticker = _build_mock_ticker(info, income_df_with_yoy, cashflow_df, dividends)
 
         with patch("yfinance.Ticker", return_value=ticker):
@@ -126,7 +131,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         # info.dividendYield (0.36) is intentionally ignored when TTM cash exists.
         self.assertAlmostEqual(div["ttm_dividend_yield_pct"], 0.5, places=2)
         self.assertEqual(div["currency"], "USD")
-        self.assertEqual(div["events"][0]["ex_dividend_date"], "2026-05-11")
+        self.assertEqual(div["events"][0]["ex_dividend_date"], latest_ex_dividend)
 
         self.assertEqual(
             bundle["belong_boards"],
@@ -141,8 +146,10 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         # Series. Without coercion, `.items()` yields (column_name, Series), every event
         # is dropped, and TTM silently falls back to the annual-rate estimate — the real
         # bug seen on live US/HK/JP/KR/TW reports (24.0 / "0 次" instead of the true sum).
+        # 日期相对「今天」动态生成，保证 4 笔全部落在 TTM 窗口内（防时间炸弹）。
+        now = pd.Timestamp.now(tz="America/New_York")
         idx = pd.DatetimeIndex(
-            ["2025-08-11", "2025-11-10", "2026-02-09", "2026-05-11"],
+            [now - pd.Timedelta(days=d) for d in (340, 250, 160, 100)],
             tz="America/New_York",
         )
         dividends_df = pd.DataFrame({"Dividends": [0.26, 0.26, 0.26, 0.27]}, index=idx)

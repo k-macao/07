@@ -431,6 +431,10 @@ class AkshareFundamentalAdapter:
             ("stock_individual_fund_flow", {}),
             ("stock_main_fund_flow", {"symbol": stock_code}),
             ("stock_main_fund_flow", {}),
+            # 换源：东方财富接口异常时改走同花顺个股资金流（免密钥）
+            ("stock_fund_flow_individual", {"symbol": "即时"}),
+            # 换源：东财另一台主机的全市场资金流排行（push2 clist）
+            ("stock_individual_fund_flow_rank", {"indicator": "今日"}),
         ])
         result["errors"].extend(stock_errors)
         if stock_df is not None:
@@ -449,6 +453,8 @@ class AkshareFundamentalAdapter:
         sector_df, sector_source, sector_errors = self._call_df_candidates([
             ("stock_sector_fund_flow_rank", {}),
             ("stock_sector_fund_flow_summary", {}),
+            # 换源：东方财富接口异常时改走同花顺行业资金流（免密钥）
+            ("stock_fund_flow_industry", {"symbol": "即时"}),
         ])
         result["errors"].extend(sector_errors)
         if sector_df is not None:

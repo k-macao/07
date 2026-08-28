@@ -647,6 +647,23 @@ class StockAnalysisPipeline:
             else:
                 logger.info(f"{stock_name}({code}) 搜索服务不可用，跳过情报搜索")
 
+            # 换源兜底：搜索服务不可用 / 情报为空时，改走免密钥的
+            # 东方财富个股新闻（akshare），避免舆情块「数据缺失」。
+            if not news_context:
+                try:
+                    from src.news_fallback import fetch_stock_news_via_akshare
+
+                    fallback_news = fetch_stock_news_via_akshare(code, stock_name=stock_name)
+                except Exception as exc:  # noqa: BLE001 - 兜底不允许影响主流程
+                    logger.warning(f"{stock_name}({code}) 新闻兜底数据源失败: {exc}")
+                    fallback_news = None
+                if fallback_news:
+                    news_context, fallback_count = fallback_news
+                    news_result_count = fallback_count
+                    logger.info(
+                        f"{stock_name}({code}) 已换源东方财富个股新闻: {fallback_count} 条"
+                    )
+
             # Step 4.5: Social sentiment intelligence (US stocks only)
             if self.social_sentiment_service is not None and self.social_sentiment_service.is_available and is_us_stock_code(code):
                 try:

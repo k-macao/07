@@ -2068,28 +2068,22 @@ class AkshareFetcher(BaseFetcher):
             return None
 
     def get_concept_rankings(self, n: int = 5) -> Optional[Tuple[List[Dict], List[Dict]]]:
-        """获取概念/题材涨跌榜。"""
+        """获取概念/题材涨跌榜（东财失败时换源新浪概念板块）。"""
         import akshare as ak
 
-        try:
-            self._set_random_user_agent()
-            self._enforce_rate_limit()
+        change_col = '涨跌幅'
+        name_col = '板块名称'
 
-            logger.info("[API调用] ak.stock_board_concept_name_em() 获取概念排行...")
-            df = ak.stock_board_concept_name_em()
-            if df is None or df.empty:
+        def _to_rankings(frame: pd.DataFrame) -> Optional[Tuple[List[Dict], List[Dict]]]:
+            if frame is None or frame.empty:
                 return None
-
-            change_col = '涨跌幅'
-            name_col = '板块名称'
-            if change_col not in df.columns or name_col not in df.columns:
+            if change_col not in frame.columns or name_col not in frame.columns:
                 return None
-
-            df = df.copy()
-            df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
-            df = df.dropna(subset=[change_col])
-            top = df.nlargest(n, change_col)
-            bottom = df.nsmallest(n, change_col)
+            frame = frame.copy()
+            frame[change_col] = pd.to_numeric(frame[change_col], errors='coerce')
+            frame = frame.dropna(subset=[change_col])
+            top = frame.nlargest(n, change_col)
+            bottom = frame.nsmallest(n, change_col)
             return (
                 [
                     {'name': str(row[name_col]), 'change_pct': float(row[change_col])}
@@ -2100,9 +2094,37 @@ class AkshareFetcher(BaseFetcher):
                     for _, row in bottom.iterrows()
                 ],
             )
+
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+
+            logger.info("[API调用] ak.stock_board_concept_name_em() 获取概念排行...")
+            result = _to_rankings(ak.stock_board_concept_name_em())
+            if result is not None:
+                return result
         except Exception as e:
-            logger.warning(f"[Akshare] 获取概念排行失败: {e}")
-            return None
+            logger.warning(f"[Akshare] 获取概念排行失败(东财): {e}")
+
+        # 换源：东方财富概念接口异常时，改走新浪概念板块行情
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+
+            logger.info("[API调用] ak.stock_sector_spot('概念') 获取概念排行(新浪兜底)...")
+            sina_df = ak.stock_sector_spot(indicator="概念")
+            if sina_df is not None and not sina_df.empty:
+                rename_map = {}
+                if '板块' in sina_df.columns:
+                    rename_map['板块'] = name_col
+                sina_df = sina_df.rename(columns=rename_map)
+                result = _to_rankings(sina_df)
+                if result is not None:
+                    logger.info("[Akshare] 概念排行已换源新浪: top%d/bottom%d", len(result[0]), len(result[1]))
+                    return result
+        except Exception as e:
+            logger.warning(f"[Akshare] 获取概念排行失败(新浪兜底): {e}")
+        return None
 
     def get_hot_stocks(self, n: int = 10) -> Optional[List[Dict[str, Any]]]:
         """获取人气股榜，按免配置热榜数据源降级。"""

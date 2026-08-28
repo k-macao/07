@@ -43,6 +43,7 @@ from src.data.stock_mapping import (
     canonicalize_foreign_stock_code,
     foreign_stock_english_aliases,
 )
+from src.news_fallback import PROVIDER_NAME as AKSHARE_NEWS_PROVIDER, fetch_akshare_news_rows
 from src.services.run_diagnostics import record_provider_run, record_provider_run_started
 
 logger = logging.getLogger(__name__)
@@ -4260,6 +4261,42 @@ class SearchService:
             if best_ranked_response is not None:
                 self._put_cache(cache_key, best_ranked_response)
                 return best_ranked_response
+
+            # 换源兜底：所有配置引擎都无有效结果时，改走免密钥的
+            # 东方财富个股新闻（akshare），避免舆情块直接「数据缺失」。
+            if not self._is_foreign_stock(stock_code):
+                fallback_started = time.monotonic()
+                try:
+                    fallback_rows = fetch_akshare_news_rows(stock_code, max_results=max_results)
+                except Exception as exc:  # noqa: BLE001 - 兜底不允许影响主流程
+                    logger.info("AkshareEM 新闻兜底异常: %s", exc)
+                    fallback_rows = []
+                if fallback_rows:
+                    fallback_response = SearchResponse(
+                        query=query,
+                        results=[
+                            SearchResult(
+                                title=row["title"],
+                                snippet=row.get("snippet") or "",
+                                url=row.get("url") or "",
+                                source=row.get("source") or "东方财富",
+                                published_date=row.get("published_date"),
+                            )
+                            for row in fallback_rows[:max_results]
+                        ],
+                        provider=AKSHARE_NEWS_PROVIDER,
+                        success=True,
+                        search_time=self._elapsed_ms(fallback_started) / 1000.0,
+                    )
+                    logger.info(
+                        "%s(%s) 搜索引擎无结果，已换源 %s 获取 %d 条个股新闻",
+                        stock_name,
+                        stock_code,
+                        AKSHARE_NEWS_PROVIDER,
+                        len(fallback_response.results),
+                    )
+                    self._put_cache(cache_key, fallback_response)
+                    return fallback_response
 
             if had_provider_success:
                 return SearchResponse(

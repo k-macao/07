@@ -239,6 +239,109 @@ def _is_meaningful_chip_distribution(chip: Any) -> bool:
     )
 
 
+def estimate_chip_distribution_from_daily(
+    df: Optional[pd.DataFrame],
+    stock_code: str,
+    *,
+    window: int = 120,
+    bins: int = 240,
+    daily_turnover: float = 0.06,
+) -> Optional["object"]:
+    """基于日线（多源 K 线）估算筹码分布，作为筹码接口全挂时的换源兜底。
+
+    算法：经典的「每日均匀分布 + 换手衰减」近似——历史筹码按固定日
+    换手率衰减，当天筹码均匀摊在 [low, high] 区间。日 K 本身就有
+    efinance/akshare/pytdx/baostock/tencent 多源冗余，因此该兜底在
+    单一数据商（东方财富）接口异常时依然可用。
+
+    Args:
+        df: 标准化后的日 K 数据（date/open/high/low/close/volume）。
+        stock_code: 股票代码。
+        window: 参与估算的交易日数量。
+        bins: 价格网格数量。
+        daily_turnover: 近似的日换手衰减率。
+
+    Returns:
+        ChipDistribution（source="kline_estimate"），数据不足返回 None。
+    """
+    from .realtime_types import ChipDistribution
+
+    if df is None or df.empty:
+        return None
+
+    data = df.tail(max(30, window))
+    if len(data) < 30:
+        return None
+    for col in ("low", "high", "close"):
+        if col not in data.columns:
+            return None
+
+    lows = pd.to_numeric(data["low"], errors="coerce").dropna()
+    highs = pd.to_numeric(data["high"], errors="coerce").dropna()
+    closes = pd.to_numeric(data["close"], errors="coerce").dropna()
+    if lows.empty or highs.empty or closes.empty:
+        return None
+
+    price_min = float(lows.min())
+    price_max = float(highs.max())
+    if price_min <= 0 or price_max <= price_min:
+        return None
+
+    grid = np.linspace(price_min, price_max, bins)
+    chips = np.zeros(bins)
+    for low, high in zip(lows.tolist(), highs.tolist()):
+        chips *= (1.0 - daily_turnover)
+        mask = (grid >= low) & (grid <= high)
+        if mask.any():
+            chips[mask] += 1.0
+
+    total = float(chips.sum())
+    if total <= 0:
+        return None
+    weights = chips / total
+    cumulative = np.cumsum(weights)
+
+    close = float(closes.iloc[-1])
+    profit_ratio = float(weights[grid <= close].sum())
+    avg_cost = float((weights * grid).sum())
+
+    def _band(quantile_low: float, quantile_high: float) -> Tuple[float, float]:
+        idx_low = int(np.searchsorted(cumulative, quantile_low))
+        idx_high = int(np.searchsorted(cumulative, quantile_high))
+        idx_low = min(max(idx_low, 0), bins - 1)
+        idx_high = min(max(idx_high, idx_low + 1), bins - 1)
+        return float(grid[idx_low]), float(grid[idx_high])
+
+    cost_90_low, cost_90_high = _band(0.05, 0.95)
+    cost_70_low, cost_70_high = _band(0.15, 0.85)
+    concentration_90 = (
+        (cost_90_high - cost_90_low) / (cost_90_high + cost_90_low)
+        if (cost_90_high + cost_90_low) > 0
+        else 0.0
+    )
+    concentration_70 = (
+        (cost_70_high - cost_70_low) / (cost_70_high + cost_70_low)
+        if (cost_70_high + cost_70_low) > 0
+        else 0.0
+    )
+
+    last_date = data["date"].iloc[-1] if "date" in data.columns else ""
+    return ChipDistribution(
+        code=stock_code,
+        date=str(last_date),
+        source="kline_estimate",
+        profit_ratio=min(max(profit_ratio, 0.0), 1.0),
+        avg_cost=avg_cost,
+        cost_90_low=cost_90_low,
+        cost_90_high=cost_90_high,
+        concentration_90=concentration_90,
+        cost_70_low=cost_70_low,
+        cost_70_high=cost_70_high,
+        concentration_70=concentration_70,
+    )
+
+
+
 def _market_tag(code: str) -> str:
     """返回市场标签: cn/us/hk/jp/kr/tw."""
     if _is_us_market(code):
@@ -2230,6 +2333,44 @@ class DataFetcherManager:
                 continue
 
         logger.warning(f"[筹码分布] {stock_code} 所有数据源均失败")
+
+        # 换源兜底：筹码接口全挂时，改用「多源日K + 换手衰减」估算筹码分布，
+        # 避免报告筹码块直接「数据缺失」。
+        try:
+            df, _source = self.get_daily_data(stock_code, days=180)
+        except Exception as exc:  # noqa: BLE001 - 兜底不允许抛出
+            logger.warning(f"[筹码分布] {stock_code} 兜底日K获取失败: {exc}")
+            df = None
+        estimate_start = time.time()
+        try:
+            estimate = estimate_chip_distribution_from_daily(df, stock_code)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[筹码分布] {stock_code} 日K估算失败: {exc}")
+            estimate = None
+        if _is_meaningful_chip_distribution(estimate):
+            record_provider_run(
+                data_type="chip",
+                provider="KlineChipEstimate",
+                operation="estimate_chip_distribution",
+                success=True,
+                latency_ms=int((time.time() - estimate_start) * 1000),
+                record_count=1,
+            )
+            logger.info(
+                f"[筹码分布] {stock_code} 已换源日K估算筹码分布 "
+                f"(date={estimate.date}, 获利比例={estimate.profit_ratio:.1%}, "
+                f"平均成本={estimate.avg_cost:.2f})"
+            )
+            return estimate
+        record_provider_run(
+            data_type="chip",
+            provider="KlineChipEstimate",
+            operation="estimate_chip_distribution",
+            success=False,
+            latency_ms=int((time.time() - estimate_start) * 1000),
+            error_type="empty",
+            error_message="insufficient daily data for chip estimate",
+        )
         return None
 
     def get_stock_name(self, stock_code: str, allow_realtime: bool = True) -> Optional[str]:
