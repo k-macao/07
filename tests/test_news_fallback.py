@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -13,6 +13,8 @@ from src.news_fallback import (
     format_news_rows,
     is_cn_stock_code,
 )
+from src.search_service import SearchResponse, SearchResult
+from src.core.pipeline import StockAnalysisPipeline
 
 
 def _fake_df() -> pd.DataFrame:
@@ -134,6 +136,98 @@ class TestSearchServiceFallback(unittest.TestCase):
         self.assertEqual(len(response.results), 1)
         self.assertEqual(response.results[0].title, "兜底新闻")
         self.assertIn("兜底新闻", response.to_context())
+
+
+class TestPipelineIntelNewsGating(unittest.TestCase):
+    """回归测试：空情报结果不应抑制东财兜底换源。
+
+    历史缺陷：``format_intel_report`` 即使所有维度都为空也会返回非空占位文本，
+    导致 ``news_context`` 恒为真值，下方的东财（akshare）兜底换源被跳过，
+    舆情/新闻块最终显示「数据缺失 / 未找到相关信息」。修复后，只有当存在
+    至少一条可用结果时才生成情报上下文，否则返回 (None, None) 走兜底。
+    """
+
+    def _make_response(self, results, query="贵州茅台 最新消息"):
+        return SearchResponse(
+            query=query,
+            results=results,
+            provider="mock",
+            success=True,
+        )
+
+    def _make_result(self, title="新闻标题", published="2026-08-28"):
+        return SearchResult(
+            title=title,
+            snippet="摘要内容",
+            url="https://example.com/1",
+            source="来源",
+            published_date=published,
+        )
+
+    def _build_pipeline(self):
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.search_service = MagicMock()
+        pipeline.db = MagicMock()
+        pipeline.query_id = None
+        pipeline.query_source = "test"
+        pipeline.source_message = None
+        return pipeline
+
+    def test_all_dimensions_empty_returns_none_to_trigger_fallback(self):
+        pipeline = self._build_pipeline()
+        intel = {
+            "latest_news": self._make_response([]),
+            "announcements": self._make_response([]),
+            "risk_check": self._make_response([]),
+            "earnings": self._make_response([]),
+            "industry": self._make_response([]),
+        }
+
+        news_context, news_result_count = pipeline._build_news_context_from_intel(
+            intel,
+            code="600519",
+            stock_name="贵州茅台",
+            query_id="q1",
+        )
+
+        self.assertIsNone(news_context)
+        self.assertIsNone(news_result_count)
+        # 空结果不应生成占位上下文，也不应持久化任何维度
+        pipeline.search_service.format_intel_report.assert_not_called()
+        pipeline.db.save_news_intel.assert_not_called()
+
+    def test_empty_intel_dict_returns_none(self):
+        pipeline = self._build_pipeline()
+        news_context, news_result_count = pipeline._build_news_context_from_intel(
+            {},
+            code="600519",
+            stock_name="贵州茅台",
+            query_id="q1",
+        )
+        self.assertIsNone(news_context)
+        self.assertIsNone(news_result_count)
+
+    def test_with_usable_results_builds_context_and_persists(self):
+        pipeline = self._build_pipeline()
+        pipeline.search_service.format_intel_report.return_value = "【贵州茅台 情报搜索结果】..."
+        pipeline._build_query_context = MagicMock(return_value={"query_id": "q1"})
+        intel = {
+            "latest_news": self._make_response([self._make_result()]),
+            "risk_check": self._make_response([]),
+        }
+
+        news_context, news_result_count = pipeline._build_news_context_from_intel(
+            intel,
+            code="600519",
+            stock_name="贵州茅台",
+            query_id="q1",
+        )
+
+        self.assertEqual(news_context, "【贵州茅台 情报搜索结果】...")
+        self.assertEqual(news_result_count, 1)
+        pipeline.search_service.format_intel_report.assert_called_once()
+        # 仅成功且有结果的维度被持久化
+        self.assertEqual(pipeline.db.save_news_intel.call_count, 1)
 
 
 if __name__ == "__main__":
