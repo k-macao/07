@@ -426,21 +426,22 @@ git push
 
 ### Schedule Details
 
-Default configuration: **Monday to Friday, 18:00 Beijing Time** auto-execution
+Default configuration: **Monday to Friday, 17:00 (5 PM) Beijing Time** auto-execution; after analysis only the PushPlus WeChat magazine long page is pushed.
 
 Modify time: Edit cron expression in `.github/workflows/00-daily-analysis.yml`:
 
 ```yaml
 schedule:
-  - cron: '0 10 * * 1-5'  # UTC time, +8 = Beijing time
+  - cron: '0 9 * * 1-5'   # UTC time, +8 = Beijing time
 ```
 
 Common cron examples:
 | Expression | Description |
 |--------|------|
+| `'0 9 * * 1-5'` | Mon-Fri 17:00 (Beijing, default) |
 | `'0 10 * * 1-5'` | Mon-Fri 18:00 (Beijing) |
 | `'30 7 * * 1-5'` | Mon-Fri 15:30 (Beijing) |
-| `'0 10 * * *'` | Daily 18:00 (Beijing) |
+| `'0 9 * * *'` | Daily 17:00 (Beijing) |
 | `'0 2 * * 1-5'` | Mon-Fri 10:00 (Beijing) |
 
 ### Modify Watchlist

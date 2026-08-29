@@ -54,62 +54,14 @@ Discord 长报告发送复用现有分片链路：单条 `content` 运行时不�
 
 ## GitHub Actions 映射
 
-仓库自带 `.github/workflows/00-daily-analysis.yml` 只显式导入固定变量名。P0/P3/P4/P6 已把 Body 模板、安全项、PushPlus topic、路由、降噪、ntfy 和 Gotify 等通知 key 纳入默认 workflow。下面的表格由 `scripts/generate_notification_actions_env_table.py` 从 workflow `env:` 和通知诊断元数据生成，避免手写对照表和真实 Actions 映射继续漂移。
+仓库自带 `.github/workflows/00-daily-analysis.yml` 采用「只推一个页面」的设计：工作日北京时间 17:00 跑完分析后，仅调用 `scripts/pushplus_push_report.py` 推送 PushPlus「电子杂志 × 电子墨水」竖版长页（微信内打开）。分析步骤不注入任何通知渠道密钥，企业微信 / 飞书 / 钉钉 / Telegram / Discord / Slack / 邮件等其他渠道在该定时任务中一律不推送；推送步骤只注入下表中的 PushPlus 两个 key。下面的表格由 `scripts/generate_notification_actions_env_table.py` 从 workflow 各步骤 `env:` 和通知诊断元数据汇总生成，避免手写对照表和真实 Actions 映射继续漂移。
 
 <!-- notification-actions-env-table:start -->
 
 | Key | Tier | Channel / feature | Actions source | Default |
 | --- | --- | --- | --- | --- |
-| `WECHAT_WEBHOOK_URL` | minimal | wechat | Secret | - |
-| `WECHAT_MSG_TYPE` | advanced | wechat | Variable or Secret | `markdown` |
-| `FEISHU_WEBHOOK_URL` | minimal | feishu | Secret | - |
-| `FEISHU_WEBHOOK_SECRET` | advanced | feishu | Secret | - |
-| `FEISHU_WEBHOOK_KEYWORD` | advanced | feishu | Variable or Secret | - |
-| `DINGTALK_WEBHOOK_URL` | minimal | dingtalk | Secret | - |
-| `DINGTALK_SECRET` | advanced | dingtalk | Secret | - |
-| `TELEGRAM_BOT_TOKEN` | minimal | telegram | Secret | - |
-| `TELEGRAM_CHAT_ID` | minimal | telegram | Secret | - |
-| `TELEGRAM_MESSAGE_THREAD_ID` | advanced | telegram | Secret | - |
-| `EMAIL_SENDER` | minimal | email | Variable or Secret | - |
-| `EMAIL_PASSWORD` | minimal | email | Secret | - |
-| `EMAIL_RECEIVERS` | advanced | email | Variable or Secret | - |
-| `EMAIL_SENDER_NAME` | advanced | email | Variable or Secret | `daily_stock_analysis股票分析助手` |
-| `PUSHOVER_USER_KEY` | minimal | pushover | Secret | - |
-| `PUSHOVER_API_TOKEN` | minimal | pushover | Secret | - |
-| `NTFY_URL` | minimal | ntfy | Secret | - |
-| `NTFY_TOKEN` | advanced | ntfy | Secret | - |
-| `GOTIFY_URL` | minimal | gotify | Secret | - |
-| `GOTIFY_TOKEN` | minimal | gotify | Secret | - |
 | `PUSHPLUS_TOKEN` | minimal | pushplus | Secret | - |
 | `PUSHPLUS_TOPIC` | advanced | pushplus | Variable or Secret | - |
-| `CUSTOM_WEBHOOK_URLS` | minimal | custom | Secret | - |
-| `CUSTOM_WEBHOOK_BEARER_TOKEN` | advanced | custom | Secret | - |
-| `CUSTOM_WEBHOOK_BODY_TEMPLATE` | advanced | custom | Variable or Secret | - |
-| `WEBHOOK_VERIFY_SSL` | advanced | ntfy, gotify, custom, astrbot | Variable or Secret | `true` |
-| `DISCORD_WEBHOOK_URL` | minimal | discord | Secret | - |
-| `DISCORD_BOT_TOKEN` | minimal | discord | Secret | - |
-| `DISCORD_MAIN_CHANNEL_ID` | minimal | discord | Secret | - |
-| `FEISHU_APP_ID` | minimal | feishu | Secret | - |
-| `FEISHU_APP_SECRET` | minimal | feishu | Secret | - |
-| `FEISHU_CHAT_ID` | minimal | feishu | Variable or Secret | - |
-| `FEISHU_RECEIVE_ID_TYPE` | advanced | feishu | Variable or Secret | - |
-| `FEISHU_DOMAIN` | advanced | feishu | Variable or Secret | - |
-| `FEISHU_SEND_AS_FILE` | advanced | feishu | Variable or Secret | - |
-| `ASTRBOT_URL` | minimal | astrbot | Secret | - |
-| `ASTRBOT_TOKEN` | advanced | astrbot | Secret | - |
-| `SERVERCHAN3_SENDKEY` | minimal | serverchan3 | Secret | - |
-| `SLACK_WEBHOOK_URL` | minimal | slack | Secret | - |
-| `SLACK_BOT_TOKEN` | minimal | slack | Secret | - |
-| `SLACK_CHANNEL_ID` | minimal | slack | Secret | - |
-| `NOTIFICATION_REPORT_CHANNELS` | advanced | routing | Variable or Secret | - |
-| `NOTIFICATION_ALERT_CHANNELS` | advanced | routing | Variable or Secret | - |
-| `NOTIFICATION_SYSTEM_ERROR_CHANNELS` | advanced | routing | Variable or Secret | - |
-| `NOTIFICATION_DEDUP_TTL_SECONDS` | advanced | noise | Variable or Secret | `0` |
-| `NOTIFICATION_COOLDOWN_SECONDS` | advanced | noise | Variable or Secret | `0` |
-| `NOTIFICATION_QUIET_HOURS` | advanced | noise | Variable or Secret | - |
-| `NOTIFICATION_TIMEZONE` | advanced | noise | Variable or Secret | - |
-| `NOTIFICATION_MIN_SEVERITY` | advanced | noise | Variable or Secret | - |
-| `NOTIFICATION_DAILY_DIGEST_ENABLED` | advanced | noise | Variable or Secret | `false` |
 
 <!-- notification-actions-env-table:end -->
 

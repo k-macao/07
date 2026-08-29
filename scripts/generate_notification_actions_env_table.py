@@ -19,10 +19,6 @@ if str(ROOT_DIR) not in sys.path:
 
 from src.services.notification_diagnostics import (  # noqa: E402
     KEY_SPECS,
-    P0_ACTIONS_ENV_KEYS,
-    P3_ROUTE_ENV_KEYS,
-    P4_NOISE_ACTIONS_ENV_KEYS,
-    P6_CHANNEL_ACTIONS_ENV_KEYS,
 )
 
 WORKFLOW_PATH = ROOT_DIR / ".github/workflows/00-daily-analysis.yml"
@@ -42,18 +38,30 @@ class EnvTableRow:
 
 
 def load_daily_analysis_env(workflow_path: Path = WORKFLOW_PATH) -> dict[str, str]:
-    """Load the env block from the daily analysis workflow."""
+    """Load env mappings from the daily analysis workflow steps.
+
+    The workflow runs analysis without any notification secrets and only injects
+    PushPlus keys in the dedicated push step afterwards, so env is aggregated
+    across every step of the job (later steps do not override mappings found in
+    earlier steps).
+    """
 
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     steps = workflow["jobs"]["analyze"]["steps"]
-    analyze_step = next((step for step in steps if step.get("name") == ANALYZE_STEP_NAME), None)
     available_step_names = [step.get("name", "<unnamed>") for step in steps]
-    if analyze_step is None:
+    if ANALYZE_STEP_NAME not in available_step_names:
         raise ValueError(
             f"Expected 00-daily-analysis.yml job analyze to include a step named "
             f"{ANALYZE_STEP_NAME!r}; available step names: {available_step_names}"
         )
-    return analyze_step["env"]
+
+    env: dict[str, str] = {}
+    for step in steps:
+        step_env = step.get("env") or {}
+        for key, value in step_env.items():
+            # 先出现的映射优先（分析步骤在前、推送步骤在后）
+            env.setdefault(key, str(value))
+    return env
 
 
 def _ordered_unique(values: Iterable[str]) -> tuple[str, ...]:
@@ -183,16 +191,21 @@ def replace_managed_block(markdown: str, table: str) -> str:
 
 
 def validate_required_mappings(env: dict[str, str]) -> None:
-    required = (
-        set(P0_ACTIONS_ENV_KEYS)
-        | set(P3_ROUTE_ENV_KEYS)
-        | set(P4_NOISE_ACTIONS_ENV_KEYS)
-        | set(P6_CHANNEL_ACTIONS_ENV_KEYS)
-    )
+    """Validate the daily workflow against its current push design.
+
+    The workflow deliberately pushes only the PushPlus WeChat magazine page:
+    the analysis step carries no notification secrets at all, and the dedicated
+    push step injects just PUSHPLUS_TOKEN / PUSHPLUS_TOPIC. The remaining
+    channels (wechat/feishu/telegram/email/routing/noise/...) are intentionally
+    not mapped here, so the legacy "all channels required" drift checks no
+    longer apply.
+    """
+
+    required = {"PUSHPLUS_TOKEN", "PUSHPLUS_TOPIC"}
     missing = sorted(required - set(env))
     if missing:
         raise ValueError(
-            "00-daily-analysis.yml is missing required notification env mappings: "
+            "00-daily-analysis.yml is missing required PushPlus env mappings: "
             + ", ".join(missing)
         )
 
