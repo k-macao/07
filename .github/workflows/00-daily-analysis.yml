@@ -2,7 +2,7 @@ name: daily-stock-analysis
 
 on:
   schedule:
-    - cron: '0 1 * * 1-6'
+    - cron: '0 1 * * 1-6'   # 周一到周六，UTC 01:00 = 北京时间 09:00（周六用周五最近交易日数据）
   workflow_dispatch:
 
 concurrency:
@@ -41,6 +41,8 @@ jobs:
           TRADING_DAY_CHECK_ENABLED: 'true'
           MAX_WORKERS: '1'
           LOG_LEVEL: INFO
+          # 没数据时自动切换备用数据源（实时行情）：腾讯->新浪->东财efinance->东财akshare
+          REALTIME_SOURCE_PRIORITY: 'tencent,akshare_sina,efinance,akshare_em'
           RSS_NEWS_ENABLED: ${{ vars.RSS_NEWS_ENABLED || 'true' }}
           RSSHUB_BASE_URL: ${{ vars.RSSHUB_BASE_URL || 'https://rsshub.app' }}
           RSS_NEWS_PER_FEED: '8'
