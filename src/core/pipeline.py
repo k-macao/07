@@ -621,29 +621,22 @@ class StockAnalysisPipeline:
 
                 # 格式化情报报告
                 if intel_results:
-                    news_context = self.search_service.format_intel_report(intel_results, stock_name)
-                    total_results = sum(
-                        len(r.results) for r in intel_results.values() if r.success
+                    news_context, news_result_count = self._build_news_context_from_intel(
+                        intel_results,
+                        code=code,
+                        stock_name=stock_name,
+                        query_id=query_id,
                     )
-                    news_result_count = total_results
-                    logger.info(f"{stock_name}({code}) 情报搜索完成: 共 {total_results} 条结果")
-                    logger.debug(f"{stock_name}({code}) 情报搜索结果:\n{news_context}")
-
-                    # 保存新闻情报到数据库（用于后续复盘与查询）
-                    try:
-                        query_context = self._build_query_context(query_id=query_id)
-                        for dim_name, response in intel_results.items():
-                            if response and response.success and response.results:
-                                self.db.save_news_intel(
-                                    code=code,
-                                    name=stock_name,
-                                    dimension=dim_name,
-                                    query=response.query,
-                                    response=response,
-                                    query_context=query_context
-                                )
-                    except Exception as e:
-                        logger.warning(f"{stock_name}({code}) 保存新闻情报失败: {e}")
+                    if news_context:
+                        logger.info(
+                            f"{stock_name}({code}) 情报搜索完成: 共 {news_result_count} 条结果"
+                        )
+                        logger.debug(f"{stock_name}({code}) 情报搜索结果:\n{news_context}")
+                    else:
+                        # 各维度均无可用结果：不生成占位上下文，留给下方东财兜底换源
+                        logger.info(
+                            f"{stock_name}({code}) 情报搜索无有效结果，将换源东财兜底新闻"
+                        )
             else:
                 logger.info(f"{stock_name}({code}) 搜索服务不可用，跳过情报搜索")
 
@@ -910,7 +903,52 @@ class StockAnalysisPipeline:
             logger.error(f"{stock_name}({code}) 分析失败: {e}")
             logger.exception(f"{stock_name}({code}) 详细错误信息:")
             return None
-    
+
+    def _build_news_context_from_intel(
+        self,
+        intel_results: Dict[str, Any],
+        *,
+        code: str,
+        stock_name: str,
+        query_id: str,
+    ) -> Tuple[Optional[str], Optional[int]]:
+        """从多维情报搜索结果生成新闻上下文。
+
+        ``format_intel_report`` 即使所有维度都没有可用结果，也会返回一个
+        非空占位文本（至少包含“未找到相关信息”），因此不能无条件把它赋给
+        ``news_context``——那会把它变成真值，从而抑制下方东财（akshare）
+        兜底换源，最终导致舆情块「数据缺失 / 未找到相关信息」。
+
+        因此仅当存在至少一条可用结果时才返回情报上下文；否则返回
+        ``(None, None)``，由调用方走免密钥的东方财富个股新闻兜底。
+        """
+        total_results = sum(
+            len(r.results) for r in intel_results.values() if r and r.success
+        )
+        if total_results <= 0:
+            return None, None
+
+        news_context = self.search_service.format_intel_report(intel_results, stock_name)
+        news_result_count = total_results
+
+        # 保存新闻情报到数据库（用于后续复盘与查询）
+        try:
+            query_context = self._build_query_context(query_id=query_id)
+            for dim_name, response in intel_results.items():
+                if response and response.success and response.results:
+                    self.db.save_news_intel(
+                        code=code,
+                        name=stock_name,
+                        dimension=dim_name,
+                        query=response.query,
+                        response=response,
+                        query_context=query_context,
+                    )
+        except Exception as e:
+            logger.warning(f"{stock_name}({code}) 保存新闻情报失败: {e}")
+
+        return news_context, news_result_count
+
     def _enhance_context(
         self,
         context: Dict[str, Any],

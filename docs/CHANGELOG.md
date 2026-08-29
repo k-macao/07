@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 分析报告「舆情情报/新闻」块在搜索引擎无可用结果时显示「数据缺失 / 未找到相关信息」：`format_intel_report` 即使各维度都为空也会返回非空占位文本，导致 `news_context` 恒为真值、下方的东方财富（akshare）免密钥兜底换源被跳过。现改为仅当存在至少一条可用情报时才生成情报上下文，否则走东财兜底新闻，避免舆情块缺失。
 - [修复] `ds-day.yml` / `deepseek-manual-analysis.yml` 调用的 `scripts/pushplus_push_report.py` 缺失导致工作流报 `No such file or directory`；新增该脚本，复用 `PushplusSender` 读取 `reports/` 下 Markdown 报告并按长内容分段推送到 PushPlus。分析步骤改为 `--no-notify`，避免主流程与推送脚本重复发送。
 - [新功能] Agent Chat 按会话持久化 Skill 选择，支持刷新和会话切换恢复，并区分省略 `skills`、显式空列表与非空选择；无持久化状态的历史会话继续使用运行时默认且不会被静默转为显式选择，复用分析 `context` 中残留的 legacy `skills` / `strategies` 也不会覆盖顶层三态或会话状态，非空但全部无效的 Skill 请求不会被当成显式空列表并清空既有选择
 - [改进] 后端 CI 在不跳过离线测试的前提下按完整测试文件分成三个独立 runner 并行执行，由单一 `backend-gate` 汇总门禁结果；实测文件耗时和首分片静态检查成本共同参与负载平衡，新测试文件自动纳入，现有 pip 安装和测试参数保持不变，避免 xdist 进程内并发的全局状态竞态。
