@@ -43,9 +43,12 @@ jobs:
           LOG_LEVEL: INFO
           # 没数据时自动切换备用数据源（实时行情）：腾讯->新浪->东财efinance->东财akshare
           REALTIME_SOURCE_PRIORITY: 'tencent,akshare_sina,efinance,akshare_em'
-          RSS_NEWS_ENABLED: ${{ vars.RSS_NEWS_ENABLED || 'true' }}
-          RSSHUB_BASE_URL: ${{ vars.RSSHUB_BASE_URL || 'https://rsshub.app' }}
-          RSS_NEWS_PER_FEED: '8'
+          # 本地资讯池自动拉取（RSS/Atom/NewsNow 合规资讯源）：大盘复盘「消息催化」与
+          # 个股舆情都从这里读取。代码实际读取的开关是 NEWS_INTEL_AUTO_FETCH_ENABLED；
+          # 旧的 RSS_NEWS_ENABLED / RSSHUB_BASE_URL / RSS_NEWS_PER_FEED 从未被代码读取，
+          # 会造成「看起来开了 RSS、推送里却没有新闻」的错觉，已一并移除。
+          NEWS_INTEL_AUTO_FETCH_ENABLED: ${{ vars.NEWS_INTEL_AUTO_FETCH_ENABLED || 'true' }}
+          NEWSNOW_BASE_URL: ${{ vars.NEWSNOW_BASE_URL || 'https://newsnow.busiyi.world' }}
         run: python main.py
       - name: push-wechat-magazine
         env:
