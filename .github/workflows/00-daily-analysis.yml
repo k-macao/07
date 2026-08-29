@@ -23,7 +23,6 @@ on:
         default: false
         type: boolean
 
-# 并发控制：同一时间只运行一个分析任务
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
@@ -31,15 +30,12 @@ concurrency:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    # 兼容误将 STOCK_LIST 配到同名 Environment variables 的场景；
-    # 推荐位置仍是 Settings -> Secrets and variables -> Actions -> Repository variables。
     environment: STOCK_LIST
-    # 添加超时限制，防止任务卡死
     timeout-minutes: ${{ fromJSON(vars.ANALYSIS_TIMEOUT_MINUTES || '30') }}
 
     steps:
       - name: 随机延迟（避免固定时间访问）
-        run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
+        run: sleep $((RANDOM % 60))
 
       - name: 检出代码
         uses: actions/checkout@v5
@@ -54,17 +50,14 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          python -c "import futu; print('✅ futu SDK import OK')"
+          python -c "import futu; print('futu SDK import OK')"
 
       - name: 创建必要目录
-        run: |
-          mkdir -p data logs reports
+        run: mkdir -p data logs reports
 
       - name: 执行股票分析
         env:
-          # ==========================================
-          # AI 配置
-          # ==========================================
+          # ===== AI 配置（按你实际用到的渠道保留，未用到可删）=====
           GENERATION_BACKEND: ${{ vars.GENERATION_BACKEND || secrets.GENERATION_BACKEND }}
           GENERATION_FALLBACK_BACKEND: ${{ vars.GENERATION_FALLBACK_BACKEND || secrets.GENERATION_FALLBACK_BACKEND || 'litellm' }}
           GENERATION_BACKEND_TIMEOUT_SECONDS: ${{ vars.GENERATION_BACKEND_TIMEOUT_SECONDS || secrets.GENERATION_BACKEND_TIMEOUT_SECONDS }}
@@ -82,6 +75,7 @@ jobs:
           OPENAI_VISION_MODEL: ${{ vars.OPENAI_VISION_MODEL || secrets.OPENAI_VISION_MODEL }}
           VISION_PROVIDER_PRIORITY: ${{ vars.VISION_PROVIDER_PRIORITY || secrets.VISION_PROVIDER_PRIORITY }}
           LLM_TEMPERATURE: ${{ vars.LLM_TEMPERATURE || secrets.LLM_TEMPERATURE }}
+          LLM_USAGE_HMAC_SECRET: ${{ secrets.LLM_USAGE_HMAC_SECRET }}
           LLM_CHANNELS: ${{ vars.LLM_CHANNELS || secrets.LLM_CHANNELS }}
           LLM_HERMES_PROTOCOL: ${{ vars.LLM_HERMES_PROTOCOL || secrets.LLM_HERMES_PROTOCOL }}
           LLM_HERMES_API_SURFACE: ${{ vars.LLM_HERMES_API_SURFACE || secrets.LLM_HERMES_API_SURFACE }}
@@ -90,52 +84,27 @@ jobs:
           LLM_HERMES_MODELS: ${{ vars.LLM_HERMES_MODELS || secrets.LLM_HERMES_MODELS }}
           LLM_HERMES_ENABLED: ${{ vars.LLM_HERMES_ENABLED || secrets.LLM_HERMES_ENABLED }}
 
-          # Gemini AI（主选）
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
           GEMINI_REQUEST_DELAY: '3.0'
 
-          # AIHubMix（优先于 OPENAI_API_KEY，自动适配 base_url，推荐国内用户）
           AIHUBMIX_KEY: ${{ secrets.AIHUBMIX_KEY }}
 
-          # OpenAI 兼容 API（备选）
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_KEYS: ${{ secrets.OPENAI_API_KEYS }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
 
-          # DeepSeek
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_API_KEYS: ${{ secrets.DEEPSEEK_API_KEYS }}
 
-          # Anthropic / Claude
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_API_KEYS: ${{ secrets.ANTHROPIC_API_KEYS }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || secrets.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022' }}
 
-          # LLM 渠道模式（按你实际使用的渠道保留，未用到的可删）
-          LLM_PRIMARY_PROTOCOL: ${{ vars.LLM_PRIMARY_PROTOCOL || secrets.LLM_PRIMARY_PROTOCOL }}
-          LLM_PRIMARY_API_SURFACE: ${{ vars.LLM_PRIMARY_API_SURFACE || secrets.LLM_PRIMARY_API_SURFACE }}
-          LLM_PRIMARY_BASE_URL: ${{ vars.LLM_PRIMARY_BASE_URL || secrets.LLM_PRIMARY_BASE_URL }}
-          LLM_PRIMARY_API_KEY: ${{ secrets.LLM_PRIMARY_API_KEY }}
-          LLM_PRIMARY_API_KEYS: ${{ secrets.LLM_PRIMARY_API_KEYS }}
-          LLM_PRIMARY_MODELS: ${{ vars.LLM_PRIMARY_MODELS || secrets.LLM_PRIMARY_MODELS }}
-          LLM_PRIMARY_ENABLED: ${{ vars.LLM_PRIMARY_ENABLED || secrets.LLM_PRIMARY_ENABLED }}
-          LLM_PRIMARY_EXTRA_HEADERS: ${{ vars.LLM_PRIMARY_EXTRA_HEADERS || secrets.LLM_PRIMARY_EXTRA_HEADERS }}
-          LLM_SECONDARY_PROTOCOL: ${{ vars.LLM_SECONDARY_PROTOCOL || secrets.LLM_SECONDARY_PROTOCOL }}
-          LLM_SECONDARY_API_SURFACE: ${{ vars.LLM_SECONDARY_API_SURFACE || secrets.LLM_SECONDARY_API_SURFACE }}
-          LLM_SECONDARY_BASE_URL: ${{ vars.LLM_SECONDARY_BASE_URL || secrets.LLM_SECONDARY_BASE_URL }}
-          LLM_SECONDARY_API_KEY: ${{ secrets.LLM_SECONDARY_API_KEY }}
-          LLM_SECONDARY_API_KEYS: ${{ secrets.LLM_SECONDARY_API_KEYS }}
-          LLM_SECONDARY_MODELS: ${{ vars.LLM_SECONDARY_MODELS || secrets.LLM_SECONDARY_MODELS }}
-          LLM_SECONDARY_ENABLED: ${{ vars.LLM_SECONDARY_ENABLED || secrets.LLM_SECONDARY_ENABLED }}
-          LLM_SECONDARY_EXTRA_HEADERS: ${{ vars.LLM_SECONDARY_EXTRA_HEADERS || secrets.LLM_SECONDARY_EXTRA_HEADERS }}
-
-          # ==========================================
-          # 数据源
-          # ==========================================
+          # ===== 数据源 =====
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           TUSHARE_HTTP_URL: ${{ vars.TUSHARE_HTTP_URL || secrets.TUSHARE_HTTP_URL }}
           TICKFLOW_API_KEY: ${{ secrets.TICKFLOW_API_KEY }}
@@ -157,88 +126,5 @@ jobs:
           LONGBRIDGE_PUSH_CANDLESTICK_MODE: ${{ vars.LONGBRIDGE_PUSH_CANDLESTICK_MODE || secrets.LONGBRIDGE_PUSH_CANDLESTICK_MODE }}
           LONGBRIDGE_PRINT_QUOTE_PACKAGES: ${{ vars.LONGBRIDGE_PRINT_QUOTE_PACKAGES || secrets.LONGBRIDGE_PRINT_QUOTE_PACKAGES }}
 
-          # ==========================================
-          # 搜索服务（四维情报/消息催化需要新闻舆情，建议至少配一个）
-          # ==========================================
+          # ===== 搜索服务（四维情报/消息催化需要新闻舆情，建议至少配一个）=====
           ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
-          ANSPIRE_LLM_MODEL: ${{ vars.ANSPIRE_LLM_MODEL || secrets.ANSPIRE_LLM_MODEL }}
-          ANSPIRE_LLM_BASE_URL: ${{ vars.ANSPIRE_LLM_BASE_URL || secrets.ANSPIRE_LLM_BASE_URL }}
-          ANSPIRE_LLM_ENABLED: ${{ vars.ANSPIRE_LLM_ENABLED || secrets.ANSPIRE_LLM_ENABLED }}
-          BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
-          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
-          SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
-          MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
-          BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
-          SEARXNG_BASE_URLS: ${{ vars.SEARXNG_BASE_URLS || secrets.SEARXNG_BASE_URLS }}
-          SEARXNG_PUBLIC_INSTANCES_ENABLED: ${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED }}
-
-          # ==========================================
-          # 推送说明
-          # ==========================================
-          # 分析步骤不注入任何通知渠道密钥：只产出报告，不做任何渠道推送。
-          # 分析完成后由「推送微信杂志页面」步骤单独调用
-          # scripts/pushplus_push_report.py，仅推送 PushPlus「电子杂志 ×
-          # 电子墨水」竖版长页（PUSHPLUS_TOKEN / PUSHPLUS_TOPIC 也只在该步骤注入）。
-
-          # ==========================================
-          # 自选股配置
-          # ==========================================
-          STOCK_LIST_CONFIG: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
-          MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
-          MARKET_REVIEW_COLOR_SCHEME: ${{ vars.MARKET_REVIEW_COLOR_SCHEME || secrets.MARKET_REVIEW_COLOR_SCHEME || 'green_up' }}
-
-          # ==========================================
-          # 运行配置
-          # ==========================================
-          REPORT_TYPE: ${{ vars.REPORT_TYPE || secrets.REPORT_TYPE || 'simple' }}
-          REPORT_LANGUAGE: ${{ vars.REPORT_LANGUAGE || secrets.REPORT_LANGUAGE || '' }}
-          REPORT_SHOW_LLM_MODEL: ${{ vars.REPORT_SHOW_LLM_MODEL || secrets.REPORT_SHOW_LLM_MODEL || 'true' }}
-          MARKET_REVIEW_ENABLED: ${{ vars.MARKET_REVIEW_ENABLED || secrets.MARKET_REVIEW_ENABLED || 'true' }}
-          ANALYSIS_DELAY: ${{ vars.ANALYSIS_DELAY || secrets.ANALYSIS_DELAY || '0' }}
-          TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
-          # 盘前 09:00 推送：非交易日自动回退到最近一个交易日，
-          # 全程使用前一个交易日（最近一个已收盘交易日）的数据。
-          USE_LATEST_TRADING_DAY: ${{ vars.USE_LATEST_TRADING_DAY || secrets.USE_LATEST_TRADING_DAY || 'true' }}
-
-          # ==========================================
-          # 系统配置
-          # ==========================================
-          LOG_LEVEL: INFO
-          MAX_WORKERS: ${{ vars.MAX_WORKERS || secrets.MAX_WORKERS || '1' }}
-          ENABLE_CHIP_DISTRIBUTION: ${{ vars.ENABLE_CHIP_DISTRIBUTION || secrets.ENABLE_CHIP_DISTRIBUTION || 'false' }}
-          REALTIME_SOURCE_PRIORITY: ${{ vars.REALTIME_SOURCE_PRIORITY || 'tencent,akshare_sina,efinance,akshare_em' }}
-
-          # ===== 消息催化 · 中文财经 RSS 快讯（华尔街见闻/财联社/雪球/格隆汇/法布/金十）=====
-          RSS_NEWS_ENABLED: ${{ vars.RSS_NEWS_ENABLED || secrets.RSS_NEWS_ENABLED || 'true' }}
-          # RSSHub 实例地址（默认公共实例有限流，强烈建议自建，如 https://rsshub.你的域名.com/）
-          RSSHUB_BASE_URL: ${{ vars.RSSHUB_BASE_URL || secrets.RSSHUB_BASE_URL || 'https://rsshub.app' }}
-          RSS_NEWS_PER_FEED: ${{ vars.RSS_NEWS_PER_FEED || secrets.RSS_NEWS_PER_FEED || '8' }}
-          RSS_NEWS_KEYWORDS: ${{ vars.RSS_NEWS_KEYWORDS || secrets.RSS_NEWS_KEYWORDS || '' }}
-
-        run: |
-          # 解析自选股配置：
-          # 1. Repository/Environment secrets 或 Repository variables（STOCK_LIST_CONFIG）
-          # 2. 同名 Environment variables 注入的 runner 环境变量（STOCK_LIST）
-          # 3. 最小默认值：未配置自选股时默认分析上证指数（sh000001）
-          if [ -n "${STOCK_LIST_CONFIG:-}" ]; then
-            export STOCK_LIST="$STOCK_LIST_CONFIG"
-          elif [ -z "${STOCK_LIST:-}" ]; then
-            export STOCK_LIST="sh000001"
-          fi
-
-          # 处理 LITELLM YAML 配置文件
-          if [ -n "$LITELLM_CONFIG_YAML" ] && [ -n "$LITELLM_CONFIG" ]; then
-            echo "📝 使用 GitHub Actions Secrets/Variables 中的 LITELLM_CONFIG_YAML 配置"
-            mkdir -p "$(dirname "$LITELLM_CONFIG")"
-            echo "$LITELLM_CONFIG_YAML" > "$LITELLM_CONFIG"
-            echo "✅ LITELLM 配置文件已写入: $LITELLM_CONFIG"
-          fi
-
-          # 判断运行模式
-          MODE="${{ github.event.inputs.mode || 'full' }}"
-
-          echo "=========================================="
-          echo "🚀 A股自选股智能分析系统"
-          echo "=========================================="
-          echo "⏰ 时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          echo "🎯 运行模式: 
